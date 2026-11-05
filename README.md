@@ -18,6 +18,7 @@ Open [http://localhost:8000](http://localhost:8000). Press `Ctrl+C` in the termi
 
 - Set **Width**, **Height**, and **Depth** independently, from 5 to 15 blocks. Choose **Uneven shape** for a shape with deeper, varied stepped corners, then select **New puzzle**.
 - Choose **Easy**, **Normal**, or **Hard** difficulty. The selected difficulty changes puzzle generation effort and the score multiplier.
+- Normal and Hard puzzles include locked amber blocks. A locked block becomes available after its blocker is removed; Easy has no locked blocks.
 - Drag the puzzle to rotate it. Scroll to zoom, or pinch on a touch screen.
 - Tap or click a block to move it along its arrow. It flies out if its path is clear, slides into a gap if there is room, or stays put if the next block is in the way.
 - Select **Undo** to reverse a move. Easy has unlimited undo, Normal allows 5 undos, and Hard allows 2.

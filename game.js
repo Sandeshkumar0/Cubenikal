@@ -5,7 +5,7 @@ const canvas=document.getElementById('puzzle'),ctx=canvas.getContext('2d');
 const dimensionInputs=['width','height','depth'].map(id=>document.getElementById(id)),difficultyInput=document.getElementById('difficulty'),unevenInput=document.getElementById('uneven'),status=document.getElementById('status');
 let loading=false,session=null;
 const moveCount=document.getElementById('moves'),timerDisplay=document.getElementById('timer'),scoreDisplay=document.getElementById('score'),undoButton=document.getElementById('undo');
-const DIFFICULTIES={easy:{attempts:1,iterations:80,multiplier:1,undoLimit:Infinity},normal:{attempts:2,multiplier:1.25,undoLimit:5},hard:{attempts:3,iterations:700,multiplier:1.5,undoLimit:2}};
+const DIFFICULTIES={easy:{attempts:1,iterations:80,multiplier:1,undoLimit:Infinity,lockRatio:0},normal:{attempts:2,multiplier:1.25,undoLimit:5,lockRatio:.12},hard:{attempts:3,iterations:700,multiplier:1.5,undoLimit:2,lockRatio:.22}};
 let dimensions=[5,5,5],size=5,advanceTimer=null,timerInterval=null,generation=0;
 let blocks=[],yaw=-.65,pitch=.48,zoom=1,faces=[],width=0,height=0,finished=false,flash=null,flashUntil=0,revision=0,lastFrame='';
 function steelFace(face){
@@ -38,8 +38,8 @@ function newGame(){
  },20);
 }
 function receivePuzzle({blocks:generatedBlocks,analysis}){
- blocks=generatedBlocks;session=createSession(blocks,difficultyInput.value);loading=false;yaw=-.65;pitch=.48;zoom=1;revision++;
- status.textContent='Tap to slide into a gap, or escape along a clear path.';updateControls();canvas.setAttribute('aria-busy','false');
+ blocks=generatedBlocks;assignLocks(blocks,difficultyInput.value);session=createSession(blocks,difficultyInput.value);loading=false;yaw=-.65;pitch=.48;zoom=1;revision++;
+ status.textContent='Tap a block to move it. Amber blocks are locked until their blocker is cleared.';updateControls();canvas.setAttribute('aria-busy','false');
  timerInterval=setInterval(updateControls,250);
  document.title=`Cubenikal · ${dimensions.join(" × ")}`;
  canvas.setAttribute('aria-label',`${dimensions.join(" by ")} steel block puzzle. Drag to rotate, tap to slide or release, scroll or pinch to zoom. Press R for a new puzzle.`);
@@ -62,7 +62,8 @@ function attempt(b){
  const from=[...b.pos],result=playMove(session,b);
  if(result==='ignored')return;
  revision++;
- if(result==='removed'){b.exit=performance.now();status.textContent='';}
+ if(result==='locked'){status.textContent='That block is locked until its blocker is cleared.';updateControls();return;}
+ if(result==='removed'){b.exit=performance.now();refreshLocks(session);status.textContent='';}
  else if(result==='slid'){b.slide={from,started:performance.now()};status.textContent='Slid into the gap.';}
  else{flash=b;flashUntil=performance.now()+450;status.textContent='Another block is directly in the way.';}
  finished=session.complete;updateControls();
@@ -71,6 +72,7 @@ function attempt(b){
 undoButton.onclick=()=>{
  if(session&&undoMove(session)){
   clearTimeout(advanceTimer);advanceTimer=null;finished=session.complete;session.finishedAt=finished?session.finishedAt:undefined;flash=null;
+  refreshLocks(session);
   if(!timerInterval)timerInterval=setInterval(updateControls,250);
   revision++;status.textContent='Last move undone.';updateControls();
  }
@@ -86,11 +88,16 @@ function arrow(face,center){
  const point=(along,across=0)=>project(center.map((v,i)=>v+(d[i]*along+side[i]*across)*face.shrink));
  const tail=point(-.24),tip=point(.24),left=point(.045,.16),right=point(.045,-.16);
  if(!tail||!tip||!left||!right)return;
- ctx.strokeStyle='#303a43';
+ ctx.strokeStyle=face.b.locked?'#c58b45':'#303a43';
  ctx.lineWidth=Math.max(.85,Math.min(width*.37,height*.37)/size*zoom*.025);
  ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
  ctx.moveTo(tail[0],tail[1]);ctx.lineTo(tip[0],tip[1]);
  ctx.moveTo(left[0],left[1]);ctx.lineTo(tip[0],tip[1]);ctx.lineTo(right[0],right[1]);ctx.stroke();
+ if(face.b.locked){
+  const marker=project(center.map((v,i)=>v+face.def.n[i]*.03));if(marker){
+   ctx.fillStyle='#c58b45';ctx.beginPath();ctx.arc(marker[0],marker[1],Math.max(2,width*.006),0,Math.PI*2);ctx.fill();
+  }
+ }
 }
 function draw(now){
  requestAnimationFrame(draw);
@@ -181,6 +188,7 @@ function createSession(allBlocks,difficulty){
 }
 function playMove(currentSession,block){
  if(currentSession.complete||block.removed||!currentSession.blocks.includes(block))return 'ignored';
+ if(block.locked)return 'locked';
  const distance=moveDistance(block,currentSession.blocks);if(distance===0){currentSession.moves++;return 'blocked';}
  currentSession.moves++;
  currentSession.history.push({block,pos:[...block.pos],removed:block.removed});delete block.slide;
@@ -192,6 +200,24 @@ function undoMove(currentSession){
  const {block,pos,removed}=currentSession.history.pop();block.pos=pos;block.removed=removed;delete block.exit;delete block.slide;
  if(currentSession.undosRemaining!==Infinity)currentSession.undosRemaining--;
  currentSession.complete=currentSession.blocks.every(b=>b.removed);return true;
+}
+function firstBlockAlongRay(block,allBlocks){
+ const axis=block.dir.findIndex(v=>v!==0),direction=block.dir[axis];
+ return allBlocks.filter(other=>other!==block&&!other.removed&&block.pos.every((v,i)=>i===axis||v===other.pos[i]))
+  .filter(other=>(other.pos[axis]-block.pos[axis])*direction>0)
+  .sort((a,b)=>Math.abs(a.pos[axis]-block.pos[axis])-Math.abs(b.pos[axis]-block.pos[axis]))[0]||null;
+}
+function assignLocks(allBlocks,difficulty,random=Math.random){
+ const ratio=(DIFFICULTIES[difficulty]||DIFFICULTIES.normal).lockRatio;
+ const candidates=allBlocks.map(block=>({block,target:firstBlockAlongRay(block,allBlocks)})).filter(item=>item.target);
+ const count=Math.floor(candidates.length*ratio);
+ for(let i=0;i<count;i++){
+  const index=Math.floor(random()*candidates.length),item=candidates.splice(index,1)[0];
+  item.block.lockTarget=item.target;item.block.locked=true;
+ }
+}
+function refreshLocks(currentSession){
+ for(const block of currentSession.blocks)block.locked=Boolean(block.lockTarget&&!block.lockTarget.removed);
 }
 function elapsedSeconds(currentSession){const end=currentSession.finishedAt||performance.now();return Math.max(0,Math.floor((end-currentSession.startedAt)/1000));}
 function formatTime(seconds){return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;}
