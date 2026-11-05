@@ -20,7 +20,7 @@ Open [http://localhost:8000](http://localhost:8000). Press `Ctrl+C` in the termi
 - Choose **Easy**, **Normal**, or **Hard** difficulty. The selected difficulty changes puzzle generation effort and the score multiplier.
 - Drag the puzzle to rotate it. Scroll to zoom, or pinch on a touch screen.
 - Tap or click a block to move it along its arrow. It flies out if its path is clear, slides into a gap if there is room, or stays put if the next block is in the way.
-- Select **Undo** to reverse a move. Undo is unlimited for the current puzzle.
+- Select **Undo** to reverse a move. Easy has unlimited undo, Normal allows 5 undos, and Hard allows 2.
 - Track your moves and elapsed time during a puzzle. Completing a puzzle awards a score based on its difficulty, moves, and time.
 - Select **New puzzle** or press **R** to generate another puzzle with the current settings.
 - Clear every block to advance automatically. Each dimension increases by two, up to 15; the uneven setting stays selected if enabled.

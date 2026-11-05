@@ -5,7 +5,7 @@ const canvas=document.getElementById('puzzle'),ctx=canvas.getContext('2d');
 const dimensionInputs=['width','height','depth'].map(id=>document.getElementById(id)),difficultyInput=document.getElementById('difficulty'),unevenInput=document.getElementById('uneven'),status=document.getElementById('status');
 let loading=false,session=null;
 const moveCount=document.getElementById('moves'),timerDisplay=document.getElementById('timer'),scoreDisplay=document.getElementById('score'),undoButton=document.getElementById('undo');
-const DIFFICULTIES={easy:{attempts:1,iterations:80,multiplier:1},normal:{attempts:2,multiplier:1.25},hard:{attempts:3,iterations:700,multiplier:1.5}};
+const DIFFICULTIES={easy:{attempts:1,iterations:80,multiplier:1,undoLimit:Infinity},normal:{attempts:2,multiplier:1.25,undoLimit:5},hard:{attempts:3,iterations:700,multiplier:1.5,undoLimit:2}};
 let dimensions=[5,5,5],size=5,advanceTimer=null,timerInterval=null,generation=0;
 let blocks=[],yaw=-.65,pitch=.48,zoom=1,faces=[],width=0,height=0,finished=false,flash=null,flashUntil=0,revision=0,lastFrame='';
 function steelFace(face){
@@ -53,8 +53,9 @@ function updateControls(){
  moveCount.textContent=`${session.moves} moves · ${remaining} left`;
  timerDisplay.textContent=`Time ${formatTime(elapsedSeconds(session))}`;
  if(!session.complete)scoreDisplay.textContent=`Score ${calculateScore(session)}`;
- undoButton.textContent='Undo';
- undoButton.disabled=!session.history.length;
+ const undoLimit=session.undoLimit===Infinity?'':` (${session.undosRemaining} left)`;
+ undoButton.textContent=`Undo${undoLimit}`;
+ undoButton.disabled=!session.history.length||session.undosRemaining===0;
 }
 function attempt(b){
  if(loading||!session||blocks.some(block=>sliding(block)))return;
@@ -174,7 +175,10 @@ function moveDistance(block,allBlocks){
  return nearest===Infinity?Infinity:nearest-1;
 }
 function canEscape(block,allBlocks){return moveDistance(block,allBlocks)===Infinity;}
-function createSession(allBlocks,difficulty){return {blocks:allBlocks,history:[],complete:allBlocks.every(b=>b.removed),difficulty,moves:0,startedAt:performance.now()};}
+function createSession(allBlocks,difficulty){
+ const undoLimit=(DIFFICULTIES[difficulty]||DIFFICULTIES.normal).undoLimit;
+ return {blocks:allBlocks,history:[],complete:allBlocks.every(b=>b.removed),difficulty,moves:0,undoLimit,undosRemaining:undoLimit,startedAt:performance.now()};
+}
 function playMove(currentSession,block){
  if(currentSession.complete||block.removed||!currentSession.blocks.includes(block))return 'ignored';
  const distance=moveDistance(block,currentSession.blocks);if(distance===0){currentSession.moves++;return 'blocked';}
@@ -184,8 +188,9 @@ function playMove(currentSession,block){
  block.pos=block.pos.map((v,i)=>v+block.dir[i]*distance);return 'slid';
 }
 function undoMove(currentSession){
- if(!currentSession.history.length)return false;
+ if(!currentSession.history.length||currentSession.undosRemaining===0)return false;
  const {block,pos,removed}=currentSession.history.pop();block.pos=pos;block.removed=removed;delete block.exit;delete block.slide;
+ if(currentSession.undosRemaining!==Infinity)currentSession.undosRemaining--;
  currentSession.complete=currentSession.blocks.every(b=>b.removed);return true;
 }
 function elapsedSeconds(currentSession){const end=currentSession.finishedAt||performance.now();return Math.max(0,Math.floor((end-currentSession.startedAt)/1000));}
