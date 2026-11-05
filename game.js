@@ -2,10 +2,11 @@
 const DIRECTIONS=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 const positionKey=point=>point.join(',');
 const canvas=document.getElementById('puzzle'),ctx=canvas.getContext('2d');
-const dimensionInputs=['width','height','depth'].map(id=>document.getElementById(id)),unevenInput=document.getElementById('uneven'),status=document.getElementById('status');
+const dimensionInputs=['width','height','depth'].map(id=>document.getElementById(id)),difficultyInput=document.getElementById('difficulty'),unevenInput=document.getElementById('uneven'),status=document.getElementById('status');
 let loading=false,session=null;
-const moveCount=document.getElementById('moves'),undoButton=document.getElementById('undo');
-let dimensions=[5,5,5],size=5,advanceTimer=null,generation=0;
+const moveCount=document.getElementById('moves'),timerDisplay=document.getElementById('timer'),scoreDisplay=document.getElementById('score'),undoButton=document.getElementById('undo');
+const DIFFICULTIES={easy:{attempts:1,iterations:80,multiplier:1},normal:{attempts:2,multiplier:1.25},hard:{attempts:3,iterations:700,multiplier:1.5}};
+let dimensions=[5,5,5],size=5,advanceTimer=null,timerInterval=null,generation=0;
 let blocks=[],yaw=-.65,pitch=.48,zoom=1,faces=[],width=0,height=0,finished=false,flash=null,flashUntil=0,revision=0,lastFrame='';
 function steelFace(face){
  const n=rotate(face.def.n);
@@ -24,20 +25,22 @@ function rotate(point){return rotatePoint(point,yaw,pitch);}
 function project(point){return projectPoint(point,camera());}
 function newGame(){
  clearTimeout(advanceTimer);advanceTimer=null;
+ clearInterval(timerInterval);timerInterval=null;
  dimensions=dimensionInputs.map(input=>{const value=Math.max(5,Math.min(15,Math.round(Number(input.value)||5)));input.value=value;return value;});
- size=Math.max(...dimensions);const request=++generation,shape=unevenInput.checked;
- loading=true;session=null;moveCount.textContent='';undoButton.disabled=true;blocks=[];faces=[];finished=false;flash=null;revision++;
+ size=Math.max(...dimensions);const request=++generation,shape=unevenInput.checked,difficulty=DIFFICULTIES[difficultyInput.value]||DIFFICULTIES.normal;
+ loading=true;session=null;moveCount.textContent='';timerDisplay.textContent='';scoreDisplay.textContent='';undoButton.disabled=true;blocks=[];faces=[];finished=false;flash=null;revision++;
  status.textContent='Building a tougher puzzle…';canvas.setAttribute('aria-busy','true');
  // Yield once so the loading message paints before the deliberate, local search.
  setTimeout(()=>{
   if(request!==generation)return;
-  try{receivePuzzle(makeHardLevel(dimensions,{uneven:shape}));}
+  try{receivePuzzle(makeHardLevel(dimensions,{uneven:shape,attempts:difficulty.attempts,iterations:difficulty.iterations}));}
   catch(error){generationError(error);}
  },20);
 }
 function receivePuzzle({blocks:generatedBlocks,analysis}){
- blocks=generatedBlocks;session=createSession(blocks);loading=false;yaw=-.65;pitch=.48;zoom=1;revision++;
+ blocks=generatedBlocks;session=createSession(blocks,difficultyInput.value);loading=false;yaw=-.65;pitch=.48;zoom=1;revision++;
  status.textContent='Tap to slide into a gap, or escape along a clear path.';updateControls();canvas.setAttribute('aria-busy','false');
+ timerInterval=setInterval(updateControls,250);
  document.title=`Cubenikal · ${dimensions.join(" × ")}`;
  canvas.setAttribute('aria-label',`${dimensions.join(" by ")} steel block puzzle. Drag to rotate, tap to slide or release, scroll or pinch to zoom. Press R for a new puzzle.`);
 };
@@ -47,7 +50,9 @@ function sliding(block,now=performance.now()){return block.slide&&now-block.slid
 function updateControls(){
  if(!session)return;
  const remaining=blocks.filter(b=>!b.removed).length;
- moveCount.textContent=`${remaining} blocks left`;
+ moveCount.textContent=`${session.moves} moves · ${remaining} left`;
+ timerDisplay.textContent=`Time ${formatTime(elapsedSeconds(session))}`;
+ if(!session.complete)scoreDisplay.textContent=`Score ${calculateScore(session)}`;
  undoButton.textContent='Undo';
  undoButton.disabled=!session.history.length;
 }
@@ -60,11 +65,12 @@ function attempt(b){
  else if(result==='slid'){b.slide={from,started:performance.now()};status.textContent='Slid into the gap.';}
  else{flash=b;flashUntil=performance.now()+450;status.textContent='Another block is directly in the way.';}
  finished=session.complete;updateControls();
- if(finished){status.textContent='Cleared. Loading the next puzzle…';advanceTimer=setTimeout(()=>{dimensionInputs.forEach(input=>{input.value=Math.min(15,Number(input.value)+2);});newGame();},900);}
+ if(finished){session.finishedAt=performance.now();clearInterval(timerInterval);timerInterval=null;scoreDisplay.textContent=`Score ${calculateScore(session)}`;status.textContent=`Cleared in ${formatTime(elapsedSeconds(session))}. Loading the next puzzle…`;advanceTimer=setTimeout(()=>{dimensionInputs.forEach(input=>{input.value=Math.min(15,Number(input.value)+2);});newGame();},900);}
 }
 undoButton.onclick=()=>{
  if(session&&undoMove(session)){
-  clearTimeout(advanceTimer);advanceTimer=null;finished=session.complete;flash=null;
+  clearTimeout(advanceTimer);advanceTimer=null;finished=session.complete;session.finishedAt=finished?session.finishedAt:undefined;flash=null;
+  if(!timerInterval)timerInterval=setInterval(updateControls,250);
   revision++;status.textContent='Last move undone.';updateControls();
  }
 };
@@ -168,10 +174,11 @@ function moveDistance(block,allBlocks){
  return nearest===Infinity?Infinity:nearest-1;
 }
 function canEscape(block,allBlocks){return moveDistance(block,allBlocks)===Infinity;}
-function createSession(allBlocks){return {blocks:allBlocks,history:[],complete:allBlocks.every(b=>b.removed)};}
+function createSession(allBlocks,difficulty){return {blocks:allBlocks,history:[],complete:allBlocks.every(b=>b.removed),difficulty,moves:0,startedAt:performance.now()};}
 function playMove(currentSession,block){
  if(currentSession.complete||block.removed||!currentSession.blocks.includes(block))return 'ignored';
- const distance=moveDistance(block,currentSession.blocks);if(distance===0)return 'blocked';
+ const distance=moveDistance(block,currentSession.blocks);if(distance===0){currentSession.moves++;return 'blocked';}
+ currentSession.moves++;
  currentSession.history.push({block,pos:[...block.pos],removed:block.removed});delete block.slide;
  if(distance===Infinity){block.removed=true;currentSession.complete=currentSession.blocks.every(b=>b.removed);return 'removed';}
  block.pos=block.pos.map((v,i)=>v+block.dir[i]*distance);return 'slid';
@@ -180,6 +187,13 @@ function undoMove(currentSession){
  if(!currentSession.history.length)return false;
  const {block,pos,removed}=currentSession.history.pop();block.pos=pos;block.removed=removed;delete block.exit;delete block.slide;
  currentSession.complete=currentSession.blocks.every(b=>b.removed);return true;
+}
+function elapsedSeconds(currentSession){const end=currentSession.finishedAt||performance.now();return Math.max(0,Math.floor((end-currentSession.startedAt)/1000));}
+function formatTime(seconds){return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;}
+function calculateScore(currentSession){
+ const difficulty=DIFFICULTIES[currentSession.difficulty]||DIFFICULTIES.normal;
+ const base=currentSession.blocks.length*20*difficulty.multiplier;
+ return Math.max(0,Math.round(base-currentSession.moves*5-elapsedSeconds(currentSession)*2));
 }
 function planAssembly(dimensions,random=Math.random,uneven=false){
  const allBlocks=[],lookup=new Map(),maxSize=Math.max(...dimensions);

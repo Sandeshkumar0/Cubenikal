@@ -17,13 +17,17 @@ Open [http://localhost:8000](http://localhost:8000). Press `Ctrl+C` in the termi
 ## Play
 
 - Set **Width**, **Height**, and **Depth** independently, from 5 to 15 blocks. Choose **Uneven shape** for a shape with deeper, varied stepped corners, then select **New puzzle**.
+- Choose **Easy**, **Normal**, or **Hard** difficulty. The selected difficulty changes puzzle generation effort and the score multiplier.
 - Drag the puzzle to rotate it. Scroll to zoom, or pinch on a touch screen.
 - Tap or click a block to move it along its arrow. It flies out if its path is clear, slides into a gap if there is room, or stays put if the next block is in the way.
 - Select **Undo** to reverse a move. Undo is unlimited for the current puzzle.
+- Track your moves and elapsed time during a puzzle. Completing a puzzle awards a score based on its difficulty, moves, and time.
 - Select **New puzzle** or press **R** to generate another puzzle with the current settings.
 - Clear every block to advance automatically. Each dimension increases by two, up to 15; the uneven setting stays selected if enabled.
 
 ![An uneven 6 × 7 × 8 Cubenikal puzzle](docs/images/uneven.png)
+
+![Cubenikal difficulty modes, timer, and score](docs/images/difficulty.png)
 
 Puzzles are generated locally with a valid sequence of block removals. The generator searches for a challenging layout; when it cannot meet every difficulty target within its search limit, it uses the best solvable layout it found.
 
